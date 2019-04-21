@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <title>Service Monitor</title>
+    <!-- Bootstrap core CSS -->
+    <link href="vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom fonts for this template -->
+    <link href="vendor/font-awesome/css/font-awesome.min.css" rel="stylesheet" type="text/css">
+    <!-- Custom styles for this template -->
+    <link href="css/sb-admin.css?t=1" rel="stylesheet">
+</head>
+<body class="fixed-nav sticky-footer bg-dark" id="page-top">
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark bg-dark fixed-top" id="mainNav">
+        <a class="navbar-brand small" href="#">Dev 서버점검 <small id="dvTime">00초</small></a>
+        <div>
+            <button type="button" class="btn btn-info" id="mhelp">HP</button>
+            <a href="./Monitor.html"><button type="button" class="btn btn-warning">갱신</button></a>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="content-wrapper">
+        <div class="container-fluid">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item active">장애 발견 서버 <small id="dvErrLog"></small></li>
+            </ol>
+            <!-- Error -->
+            <div id="dvErr" style="margin-bottom:10px;"></div>
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item active">Dev/Stg/Prod 서버</li>
+            </ol>
+            <!-- Success -->
+            <div id="dv"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="sticky-footer">
+        <div class="container">
+            <div class="text-center">
+                <small>Copyright &copy; DevOpsFlux 2017</small>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scroll to Top Button -->
+    <a class="scroll-to-top rounded" href="#page-top">
+        <i class="fa fa-angle-up"></i>
+    </a>
+
+    <!-- 안내 -->
+    <div id="login_popup" style="display:none;background-color:white;width:300px;border: 2px solid #cccccc;border-radius: 15px;box-shadow: 0 0 5px 5px #888888;margin-top:20px;">
+        <div class="epopup_content">
+            <hr>
+            <b><모니터링 추가방법></b>
+            <ul>
+                <li><small>* 모니터링 페이지 </small></li>
+                <li><small>성공 : 페이지 내에 “SUCCESS” 라는 문구가 탐지 되었을 경우</small></li>
+                <li><small>실패 : 페이지 호출이 실패 했거나 “SUCCESS” 라는 문구가 탐지되지 않은경우 </small></li>
+                <li>ex)
+                    <small>
+                    <pre >
+
+If 성공 Then 
+    Response.Write “SUCCESS”
+Else 
+    Response.Write “ERRORPAGE”
+End If 
+                    </pre>
+                    </small>
+                </li>
+            </ul>
+        </div>
+        <div class="epopup_footer"></div>
+    </div>
+    <!-- /안내 -->
+</body>
+</html>
+<!-- core js -->
+<script type="text/javascript" src="./vendor/jquery/jquery.min.js"></script>
+<script type="text/javascript" src="./vendor/bpopup/bpopup.min.js"></script>
+<script type="text/javascript" src="./vendor/underscorejs/underscore-min.js"></script>
+
+<!-- template js -->
+<script type="text/template" id="server-template">
+<% for(var i=0; i<list.length; i++) { %>
+<span id='<%=list[i].sID%>_tbl' class='span_bk'>
+    <span id='<%=list[i].sID%>_SF'><%=list[i].img%></span>
+    <a href='<%=list[i].url%>' target='_blank' style='color:blue'><%=list[i].sView%></a>
+    <span id='<%=list[i].sID%>' style="display:none"></span>
+</span>
+<%}%>
+</script>
+
+<!-- app js -->
+<script type="text/javascript">
+var ServerInfo = {
+    webDBUrls: [
+        { Name: "serveice1_db", URL: "http://127.0.0.1/monitor/check_db" },
+        { Name: "serveice2_db", URL: "http://127.0.0.2/monitor/check_db" },
+        { Name: "serveice3_db", URL: "http://127.0.0.3/monitor/check_db" }
+    ],
+    webDEVUrls: [
+        { Name: "serveice1_dev", URL: "http://127.0.0.1/monitor/check_dev" },
+        { Name: "serveice2_dev", URL: "http://127.0.0.2/monitor/check_dev" },
+        { Name: "serveice3_dev", URL: "http://127.0.0.3/monitor/check_dev" }
+    ],
+    webSTGUrls: [
+        { Name: "serveice1_stg", URL: "http://127.0.0.1/monitor/check_stg" },
+        { Name: "serveice2_stg", URL: "http://127.0.0.2/monitor/check_stg" },
+        { Name: "serveice3_stg", URL: "http://127.0.0.3/monitor/check_stg" }
+    ],
+};
+
+var Monitor = {
+    Session: {
+        sTry : 0
+        , end : 0
+        , error : 0
+    },
+    nSecond: 60,
+    updateLog: function () {
+        var sStatus = '';
+        if ( this.Session.sTry > this.Session.end ) 
+        {
+            sStatus = "[<font color='#0064FF'>실행중</font>:" + this.Session.end + "/" + this.Session.sTry + "]";
+        }
+        else 
+        {
+            sStatus = "[<font color='#0064FF'>실행완료</font>:<b> " + this.Session.end + "/" + this.Session.sTry + "</b> ]";
+        }
+        $('#dvErrLog').html("<font color='#CD0000'><b>" + (this.Session.error) + "</b>개</font> " + sStatus);
+    },
+    urlTest: function (server, sText, bSuccess) {
+        var sthis = this;
+        if (bSuccess != null) 
+        {
+            bSuccess = sText.match(/SUCCESS/g)
+            if (bSuccess == null) 
+            {
+                // xdb 정검용으로 추가
+                bSuccess = sText.match(/AAEAAAD/g)
+            }
+        }
+
+        if (bSuccess != null) 
+        {
+            $('#' + server.sID + '_SF').html('<img src="image/success.png" border="0" >');
+            console.log('#' + server.sID + '_SF');
+        }
+        else 
+        {
+            server.img = '<img src="image/alert.png" border="0" >';
+            $('#' + server.sID + '_SF').html(server.img);
+            var templateHtml = _.template($('#server-template').html());
+
+            $('#dvErr').append( templateHtml({list:[server]}) );
+            this.Session.error++;
+        }
+
+        this.Session.end++;
+        this.updateLog();
+    },
+    getURL: function (datas) {
+        var sthis = this;
+
+        $.each( datas, function(index, server) {
+            $.ajax({
+                type: 'GET',
+                url: server.url,
+                success: function(data) {
+                    rimg = sthis.urlTest( server, data, true );
+                },
+                error : function(error) {
+                    rimg = sthis.urlTest( server, error, null );
+                },
+            });
+        });
+    },
+    reload: function() {
+        --this.nSecond;
+        if (this.nSecond <= 0) 
+        {
+            window.location.href = 'Monitor.html';
+        }
+        $('#dvTime').html(this.nSecond + "초");
+    },
+    evnetBind: function() {
+        $('#mhelp').click(function() {
+            $('#login_popup').bPopup({follow:[true, true]});
+        });
+    },
+    start: function() {
+        var sthis = this;
+
+        this.evnetBind();
+        this.run( 'dv', ServerInfo.webDBUrls );
+        this.run( 'dv', ServerInfo.webDEVUrls);
+        this.run( 'dv', ServerInfo.webSTGUrls);
+        window.setInterval( 'Monitor.reload();', 1000);
+    },
+    run: function( sDv, arrUrl ) {
+        var sthis = this;
+        var sBody = '';
+        var datas = new Array();;
+
+        $.each( arrUrl, function(index, oUrl) {
+            var sName = "Noname";
+            var s = oUrl.URL.match(/http:\/\/[^\/]*/g);
+            var sView = oUrl.Name;
+
+            sthis.Session.sTry++;
+            sthis.updateLog();
+
+            if (s != null) 
+            {
+                sName = s[0].replace('http://', '');
+            }
+            var sID = 'dv' + sName;
+
+            if(oUrl.URL.indexOf("dev") > 0) {
+                sID += sID + "_dev"
+            } else if(oUrl.URL.indexOf("stg") > 0) {
+                sID += sID + "_stg"
+            } else if(oUrl.URL.indexOf("db") > 0) {
+                sID += sID + "_db"
+            } else {
+                sID = 'dv' + oUrl.URL;
+            }
+
+            var url = 'Monitor.aspx?URL=' + encodeURIComponent(oUrl.URL);
+            datas.push({
+                sID:sID.replace(/[\/|.|:]/g, ''),
+                url:url,
+                sName:sName,
+                img:'<img src="image/loding.png" border="0">',
+                sView:sView
+            });
+        });
+
+        var templateHtml = _.template($('#server-template').html());
+        $('#dv').append( '<div>' + templateHtml({list:datas}) + '</div><hr>' )
+                .promise().done(function(){
+                    sthis.getURL(datas);
+                });
+    }
+}
+Monitor.start();
+</script>
+
